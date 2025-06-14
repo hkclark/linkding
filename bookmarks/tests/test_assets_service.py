@@ -72,13 +72,9 @@ class AssetServiceTestCase(TestCase, BookmarkFactoryMixin):
         assets.create_snapshot(asset)
 
         expected_temp_filename = "snapshot_2023-08-11_214511_https___example.com.tmp"
-        expected_temp_filepath = os.path.join(
-            self.assets_dir, "2023", "08", expected_temp_filename
-        )
+        expected_temp_filepath = os.path.join(self.assets_dir, "2023", "08", expected_temp_filename)
         expected_filename = "snapshot_2023-08-11_214511_https___example.com.html.gz"
-        expected_filepath = os.path.join(
-            self.assets_dir, "2023", "08", expected_filename
-        )
+        expected_filepath = os.path.join(self.assets_dir, "2023", "08", expected_filename)
 
         # should call singlefile.create_snapshot with the correct arguments
         self.mock_singlefile_create_snapshot.assert_called_once_with(
