@@ -1,8 +1,8 @@
-import gzip
 import logging
 import os
 import shutil
 
+import zstandard as zstd
 from django.conf import settings
 from django.core.files.uploadedfile import UploadedFile
 from django.utils import formats, timezone
@@ -11,6 +11,7 @@ from bookmarks.models import Bookmark, BookmarkAsset
 from bookmarks.services import singlefile
 
 MAX_ASSET_FILENAME_LENGTH = 192
+COMPRESSION_LEVEL = 9
 
 logger = logging.getLogger(__name__)
 
@@ -36,14 +37,13 @@ def create_snapshot(asset: BookmarkAsset):
         temp_filepath = os.path.join(settings.LD_ASSET_FOLDER, temp_filename)
         singlefile.create_snapshot(asset.bookmark.url, temp_filepath)
 
-        # Store as gzip in asset folder
-        filename = _generate_asset_filename(asset, asset.bookmark.url, "html.gz")
+        # Store as zstandard compressed file in asset folder
+        filename = _generate_asset_filename(asset, asset.bookmark.url, "html.zst")
         filepath = os.path.join(settings.LD_ASSET_FOLDER, filename)
-        with (
-            open(temp_filepath, "rb") as temp_file,
-            gzip.open(filepath, "wb") as gz_file,
-        ):
-            shutil.copyfileobj(temp_file, gz_file)
+        with open(temp_filepath, "rb") as temp_file, open(filepath, "wb") as compr_file:
+            cctx = zstd.ZstdCompressor(level=COMPRESSION_LEVEL)
+            with cctx.stream_writer(compr_file) as writer:
+                shutil.copyfileobj(temp_file, writer)
 
         # Remove temporary file
         os.remove(temp_filepath)
@@ -64,11 +64,13 @@ def create_snapshot(asset: BookmarkAsset):
 
 def upload_snapshot(bookmark: Bookmark, html: bytes):
     asset = create_snapshot_asset(bookmark)
-    filename = _generate_asset_filename(asset, asset.bookmark.url, "html.gz")
+    filename = _generate_asset_filename(asset, asset.bookmark.url, "html.zst")
     filepath = os.path.join(settings.LD_ASSET_FOLDER, filename)
 
-    with gzip.open(filepath, "wb") as gz_file:
-        gz_file.write(html)
+    with open(filepath, "wb") as compr_file:
+        cctx = zstd.ZstdCompressor(level=COMPRESSION_LEVEL)
+        with cctx.stream_writer(compr_file) as writer:
+            writer.write(html)
 
     # Only save the asset if the file was written successfully
     asset.status = BookmarkAsset.STATUS_COMPLETE
@@ -96,15 +98,18 @@ def upload_asset(bookmark: Bookmark, upload_file: UploadedFile):
         )
         name, extension = os.path.splitext(upload_file.name)
 
-        # automatically gzip the file if it is not already gzipped
-        if upload_file.content_type != "application/gzip":
+        # automatically compress the file if it is not already compressed
+        if upload_file.content_type != "application/zstd":
             filename = _generate_asset_filename(
-                asset, name, extension.lstrip(".") + ".gz"
+                asset, name, extension.lstrip(".") + ".zst"
             )
             filepath = os.path.join(settings.LD_ASSET_FOLDER, filename)
-            with gzip.open(filepath, "wb", compresslevel=9) as f:
+            cctx = zstd.ZstdCompressor(level=COMPRESSION_LEVEL)
+            with open(filepath, "wb") as f:
+                compressor = cctx.stream_writer(f)
                 for chunk in upload_file.chunks():
-                    f.write(chunk)
+                    compressor.write(chunk)
+                    compressor.flush()
             asset.gzip = True
             asset.file = filename
             asset.file_size = os.path.getsize(filepath)

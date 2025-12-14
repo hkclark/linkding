@@ -20,6 +20,7 @@ dependencies = [
     "supervisor>=4.3.0",
     "uwsgi>=2.0.28",
     "waybackpy>=3.0.6",
+    "zstandard>=0.21.0",
 ]
 
 [dependency-groups]

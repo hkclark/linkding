@@ -1,11 +1,8 @@
-import gzip
 import os
 
+import zstandard as zstd
 from django.conf import settings
-from django.http import (
-    HttpResponse,
-    Http404,
-)
+from django.http import Http404, HttpResponse
 from django.shortcuts import render
 
 from bookmarks.views import access
@@ -18,8 +15,10 @@ def _get_asset_content(asset):
         raise Http404("Asset file does not exist")
 
     if asset.gzip:
-        with gzip.open(filepath, "rb") as f:
-            content = f.read()
+        with open(filepath, "rb") as f:
+            dctx = zstd.ZstdDecompressor()
+            with dctx.stream_reader(f) as reader:
+                content = reader.read()
     else:
         with open(filepath, "rb") as f:
             content = f.read()
